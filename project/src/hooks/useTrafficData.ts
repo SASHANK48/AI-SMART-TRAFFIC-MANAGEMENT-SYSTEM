@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+
 import type { TrafficCamera, TrafficData, TrafficSignal, TrafficAlert } from '../types/traffic';
 
 export interface TrafficState {
@@ -82,20 +82,20 @@ export function useTrafficData(): TrafficState {
   useEffect(() => {
     let mounted = true;
 
-    // Load cameras from Supabase, then seed simulated data
-    supabase
-      .from('traffic_cameras')
-      .select('*')
-      .order('created_at')
-      .then(({ data: camerasData }: { data: TrafficCamera[] | null; error: unknown }) => {
-        if (!mounted || !camerasData) return;
+    // Load cameras from backend API, then seed simulated data
+    fetch('http://localhost:5000/api/cameras')
+      .then(res => res.json())
+      .then((data: { success: boolean; data: TrafficCamera[] }) => {
+        if (!mounted || !data.success || !data.data) return;
+        const camerasData = data.data;
         const { newTrafficData, newSignals, newAlerts, chartData: newChartData } = buildInitialData(camerasData);
         setCameras(camerasData);
         setTrafficData(newTrafficData);
         setSignals(newSignals);
         setAlerts(newAlerts);
         setChartData(newChartData);
-      });
+      })
+      .catch(err => console.error("Error fetching cameras:", err));
 
     // Simulation tick
     const interval = setInterval(() => {

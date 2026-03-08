@@ -5,6 +5,7 @@ import type * as Leaflet from 'leaflet';
 
 interface MapPageProps {
     data: TrafficState;
+    isDarkMode: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -20,12 +21,14 @@ function getDensityColor(level?: string): string {
     }
 }
 
-export function MapPage({ data }: MapPageProps) {
+export function MapPage({ data, isDarkMode }: MapPageProps) {
     const { cameras, trafficData } = data;
     const mapRef = useRef<Leaflet.Map | null>(null);
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const markersRef = useRef<Map<string, Leaflet.CircleMarker>>(new Map());
     const incidentMarkersRef = useRef<Map<string, Leaflet.Marker>>(new Map());
+    const polylinesRef = useRef<Leaflet.Polyline[]>([]);
+    const tileLayerRef = useRef<Leaflet.TileLayer | null>(null);
 
     // New Interactive State
     const [searchQuery, setSearchQuery] = useState('');
@@ -46,12 +49,6 @@ export function MapPage({ data }: MapPageProps) {
 
         L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-        // Google Maps Standard Tiles
-        L.tileLayer('http://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
-            maxZoom: 20,
-            subdomains: ['mt0', 'mt1', 'mt2', 'mt3']
-        }).addTo(map);
-
         mapRef.current = map;
 
         return () => {
@@ -59,6 +56,27 @@ export function MapPage({ data }: MapPageProps) {
             mapRef.current = null;
         };
     }, []);
+
+    // Tile Layer switch based on Dark Mode
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!map || typeof L === 'undefined') return;
+
+        if (tileLayerRef.current) {
+            map.removeLayer(tileLayerRef.current);
+        }
+
+        const tileUrl = isDarkMode 
+            ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png' // CartoDB Dark
+            : 'http://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}'; // Google Light
+
+        const opts = isDarkMode 
+            ? { maxZoom: 20, subdomains: 'abcd' }
+            : { maxZoom: 20, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'] };
+
+        tileLayerRef.current = L.tileLayer(tileUrl, opts).addTo(map);
+
+    }, [isDarkMode]);
 
     // Filter Logic
     const filteredCameras = useMemo(() => {
@@ -137,6 +155,46 @@ export function MapPage({ data }: MapPageProps) {
             }
         });
 
+        // Clear old polylines
+        polylinesRef.current.forEach(line => map.removeLayer(line));
+        polylinesRef.current = [];
+
+        // Draw connections between nearby cameras to simulate roads
+        const maxDistance = 0.5; // Roughly 50km
+        
+        for (let i = 0; i < filteredCameras.length; i++) {
+            const cam1 = filteredCameras[i];
+            if (!cam1.latitude || !cam1.longitude) continue;
+
+            const td1 = trafficData.get(cam1.id);
+            const color1 = getDensityColor(td1?.density_level);
+
+            for (let j = i + 1; j < filteredCameras.length; j++) {
+                const cam2 = filteredCameras[j];
+                if (!cam2.latitude || !cam2.longitude) continue;
+
+                // Simple Euclidean distance for visual proximity
+                const dist = Math.sqrt(Math.pow(cam1.latitude - cam2.latitude, 2) + Math.pow(cam1.longitude - cam2.longitude, 2));
+                
+                // If cameras are close enough, draw a connecting traffic line
+                if (dist < maxDistance) {
+                    const line = L.polyline(
+                        [[cam1.latitude, cam1.longitude], [cam2.latitude, cam2.longitude]], 
+                        {
+                            color: color1,
+                            weight: td1?.density_level === 'critical' ? 6 : 4,
+                            opacity: td1?.density_level === 'critical' ? 0.9 : 0.6,
+                            className: td1?.density_level === 'critical' ? 'critical-traffic-line' : ''
+                        }
+                    ).addTo(map);
+                    polylinesRef.current.push(line);
+
+                    // We only want a few connections per camera so the map doesn't become a solid web
+                    if (Math.random() > 0.8) break; 
+                }
+            }
+        }
+
         // Fit bounds once if not searched
         if (!searchQuery && currentIds.size > 0 && currentIds.size === cameras.length && markersRef.current.size === cameras.length) {
             // only run once at the very beginning when everything matches 1 to 1 to avoid fighting scroll
@@ -203,7 +261,7 @@ export function MapPage({ data }: MapPageProps) {
     }, [incidents]);
 
     return (
-        <div className="flex flex-col h-[calc(100vh-72px)] relative overflow-hidden bg-gray-100">
+        <div className={`flex flex-col h-[calc(100vh-80px)] relative overflow-hidden ${isDarkMode ? 'bg-gray-900' : 'bg-gray-100'}`}>
             {/* Map Container */}
             <div className="flex-1 w-full relative z-0">
                 <div 
@@ -216,12 +274,14 @@ export function MapPage({ data }: MapPageProps) {
                     {/* Left side: Search & Filters */}
                     <div className="flex flex-col gap-3 pointer-events-auto w-full md:w-[420px]">
                         {/* Search Bar */}
-                        <div className="bg-white rounded-lg shadow-[0_2px_6px_rgba(0,0,0,0.3)] p-3 flex items-center gap-3">
-                            <Search className="w-5 h-5 text-gray-500" />
+                        <div className={`rounded-xl shadow-lg backdrop-blur-md p-3 flex items-center gap-3 border transition-colors ${
+                            isDarkMode ? 'bg-gray-900/80 border-gray-700 text-white' : 'bg-white/80 border-gray-200 text-gray-900'
+                        }`}>
+                            <Search className={`w-5 h-5 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`} />
                             <input 
                                 type="text" 
-                                placeholder="Search Google Maps..." 
-                                className="bg-transparent border-none text-gray-800 focus:outline-none w-full text-base placeholder:text-gray-400"
+                                placeholder="Search Traffic Network..." 
+                                className={`bg-transparent border-none focus:outline-none w-full text-base placeholder:text-gray-400`}
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                             />
@@ -234,10 +294,10 @@ export function MapPage({ data }: MapPageProps) {
 
                         {/* Filter Bar */}
                         <div className="flex items-center flex-wrap gap-2">
-                            <FilterButton active={activeFilter === null} onClick={() => setActiveFilter(null)} label="All" />
-                            <FilterButton active={activeFilter === 'critical_high'} onClick={() => setActiveFilter('critical_high')} label="Critical" color="text-red-700 bg-red-100" />
-                            <FilterButton active={activeFilter === 'low'} onClick={() => setActiveFilter('low')} label="Smooth" color="text-green-700 bg-green-100" />
-                            <FilterButton active={activeFilter === 'medium'} onClick={() => setActiveFilter('medium')} label="Moderate" color="text-yellow-700 bg-yellow-100" />
+                            <FilterButton isDarkMode={isDarkMode} active={activeFilter === null} onClick={() => setActiveFilter(null)} label="All" />
+                            <FilterButton isDarkMode={isDarkMode} active={activeFilter === 'critical_high'} onClick={() => setActiveFilter('critical_high')} label="Critical" color="text-red-500 bg-red-500/10 border-red-500/30" activeColor="bg-red-500 text-white border-red-500" />
+                            <FilterButton isDarkMode={isDarkMode} active={activeFilter === 'low'} onClick={() => setActiveFilter('low')} label="Smooth" color="text-green-500 bg-green-500/10 border-green-500/30" activeColor="bg-green-500 text-white border-green-500" />
+                            <FilterButton isDarkMode={isDarkMode} active={activeFilter === 'medium'} onClick={() => setActiveFilter('medium')} label="Moderate" color="text-yellow-500 bg-yellow-500/10 border-yellow-500/30" activeColor="bg-yellow-500 text-white border-yellow-500" />
                         </div>
                     </div>
 
@@ -246,10 +306,12 @@ export function MapPage({ data }: MapPageProps) {
                         {/* Simulate Button */}
                         <button 
                             onClick={() => setSimulatingMode(!simulatingMode)}
-                            className={`flex items-center gap-2 px-4 py-2 bg-white rounded-lg shadow-[0_2px_6px_rgba(0,0,0,0.3)] font-medium text-sm transition-colors ${
+                            className={`flex items-center gap-2 px-4 py-2 rounded-xl shadow-lg backdrop-blur-md font-semibold text-sm transition-all border ${
                                 simulatingMode 
-                                ? 'text-red-500 hover:bg-red-50 border-2 border-red-500' 
-                                : 'text-gray-700 hover:bg-gray-50 border-2 border-transparent'
+                                ? 'bg-red-500 text-white border-red-500 shadow-red-500/30 scale-105' 
+                                : isDarkMode
+                                    ? 'bg-gray-900/80 text-gray-300 border-gray-700 hover:bg-gray-800'
+                                    : 'bg-white/90 text-gray-700 border-gray-200 hover:bg-white'
                             }`}
                         >
                             <AlertTriangle className="w-4 h-4" />
@@ -257,30 +319,32 @@ export function MapPage({ data }: MapPageProps) {
                         </button>
 
                         {/* Legend */}
-                        <div className="bg-white rounded-lg shadow-[0_2px_6px_rgba(0,0,0,0.3)] p-4 w-[220px]">
-                            <h3 className="text-xs font-bold text-gray-800 uppercase mb-3">Traffic Dashboard</h3>
-                            <div className="flex flex-col gap-2">
-                                <LegendItem color="#22c55e" label="Low (Smooth)" />
-                                <LegendItem color="#eab308" label="Medium" />
-                                <LegendItem color="#f97316" label="High" />
-                                <LegendItem color="#ef4444" label="Critical" />
+                        <div className={`rounded-2xl shadow-xl backdrop-blur-md border p-5 w-[240px] ${
+                            isDarkMode ? 'bg-gray-900/80 border-gray-700' : 'bg-white/80 border-gray-200'
+                        }`}>
+                            <h3 className={`text-xs font-bold uppercase tracking-wider mb-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Traffic Legends</h3>
+                            <div className="flex flex-col gap-3">
+                                <LegendItem color="#22c55e" label="Low (Smooth)" isDarkMode={isDarkMode} />
+                                <LegendItem color="#eab308" label="Moderate" isDarkMode={isDarkMode} />
+                                <LegendItem color="#f97316" label="High" isDarkMode={isDarkMode} />
+                                <LegendItem color="#ef4444" label="Critical" isDarkMode={isDarkMode} />
                             </div>
                             
-                            <div className="mt-4 pt-4 border-t border-gray-100 flex flex-col gap-2">
+                            <div className={`mt-5 pt-4 flex flex-col gap-3 border-t ${isDarkMode ? 'border-gray-800' : 'border-gray-200'}`}>
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
-                                        <MapPin className="w-4 h-4 text-blue-500" />
-                                        <span className="text-xs text-gray-600">Cameras</span>
+                                        <MapPin className="w-4 h-4 text-indigo-500" />
+                                        <span className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Cameras</span>
                                     </div>
-                                    <span className="text-sm font-bold text-gray-800">{filteredCameras.length}</span>
+                                    <span className={`text-base font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{filteredCameras.length}</span>
                                 </div>
                                 {incidents.length > 0 && (
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-2">
-                                            <AlertTriangle className="w-4 h-4 text-red-500" />
-                                            <span className="text-xs text-red-500">Incidents</span>
+                                            <AlertTriangle className="w-4 h-4 text-red-500 animate-pulse" />
+                                            <span className="text-sm text-red-500 font-medium">Incidents</span>
                                         </div>
-                                        <span className="text-sm font-bold text-red-500">{incidents.length}</span>
+                                        <span className="text-base font-bold text-red-500">{incidents.length}</span>
                                     </div>
                                 )}
                             </div>
@@ -313,29 +377,34 @@ export function MapPage({ data }: MapPageProps) {
 }
 
 // Subcomponents
-function FilterButton({ active, onClick, label, color = "text-gray-700 bg-white" }: { active: boolean, onClick: () => void, label: string, color?: string }) {
+function FilterButton({ isDarkMode, active, onClick, label, color = "", activeColor = "" }: { isDarkMode: boolean, active: boolean, onClick: () => void, label: string, color?: string, activeColor?: string }) {
+    
+    // Default styles for "All" button
+    const defaultColor = isDarkMode ? "text-gray-300 bg-gray-800/50 border-gray-700" : "text-gray-700 bg-white/80 border-gray-200";
+    const defaultActiveColor = "bg-indigo-600 text-white border-indigo-600 shadow-indigo-500/30";
+
+    const baseClasses = "px-4 py-1.5 rounded-full text-sm font-semibold transition-all border backdrop-blur-sm";
+    
+    // If active, use activeColor, else use color. Fallback to default if not provided
+    const appliedClasses = active 
+        ? `${baseClasses} shadow-md ${activeColor || defaultActiveColor}`
+        : `${baseClasses} hover:-translate-y-0.5 shadow-sm ${color || defaultColor}`;
+
     return (
-        <button 
-            onClick={onClick}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-shadow shadow-[0_2px_4px_rgba(0,0,0,0.1)] ${
-                active 
-                ? `${color} ring-2 ring-blue-500` 
-                : `bg-white text-gray-700 hover:bg-gray-50`
-            }`}
-        >
+        <button onClick={onClick} className={appliedClasses}>
             {label}
         </button>
     );
 }
 
-function LegendItem({ color, label }: { color: string, label: string }) {
+function LegendItem({ color, label, isDarkMode }: { color: string, label: string, isDarkMode: boolean }) {
     return (
         <div className="flex items-center gap-3">
             <span 
-                className="w-3 h-3 rounded-full shadow-sm" 
-                style={{ backgroundColor: color }} 
+                className="w-3.5 h-3.5 rounded-full shadow-[0_0_8px_currentColor] opacity-90" 
+                style={{ backgroundColor: color, color: color }} 
             />
-            <span className="text-sm text-gray-600">{label}</span>
+            <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>{label}</span>
         </div>
     );
 }

@@ -6,50 +6,40 @@ import { Analytics } from './pages/Analytics';
 import { Alerts } from './pages/Alerts';
 import { useTrafficData } from './hooks/useTrafficData';
 
-type Page = 'dashboard' | 'map' | 'analytics' | 'alerts';
+import { EmergencyResponse } from './pages/EmergencyResponse';
+import { TrafficPredictions } from './pages/TrafficPredictions';
+
+type Page = 'dashboard' | 'map' | 'analytics' | 'alerts' | 'emergency' | 'predictions';
 
 function App() {
   const [activePage, setActivePage] = useState<Page>('dashboard');
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const trafficData = useTrafficData();
 
   function renderPage() {
     switch (activePage) {
-      case 'dashboard': return <Dashboard data={trafficData} />;
-      case 'map': return <MapPage data={trafficData} />;
-      case 'analytics': return <Analytics data={trafficData} />;
-      case 'alerts': return <Alerts data={trafficData} />;
-      default: return <Dashboard data={trafficData} />;
+      case 'dashboard': return <Dashboard data={trafficData} isDarkMode={isDarkMode} />;
+      case 'map': return <MapPage data={trafficData} isDarkMode={isDarkMode} />;
+      case 'analytics': return <Analytics data={trafficData} isDarkMode={isDarkMode} />;
+      case 'alerts': return <Alerts data={trafficData} isDarkMode={isDarkMode} />;
+      case 'emergency': return <EmergencyResponse data={trafficData} isDarkMode={isDarkMode} />;
+      case 'predictions': return <TrafficPredictions data={trafficData} isDarkMode={isDarkMode} />;
+      default: return <Dashboard data={trafficData} isDarkMode={isDarkMode} />;
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className={`min-h-screen transition-colors duration-300 ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-gradient-to-br from-slate-50 to-slate-100 text-gray-900'}`}>
       <Navbar
         activePage={activePage}
         onNavigate={(page) => setActivePage(page as Page)}
         cameraCount={trafficData.cameras.length}
         activeAlerts={trafficData.activeAlerts}
+        isDarkMode={isDarkMode}
+        toggleDarkMode={() => setIsDarkMode(!isDarkMode)}
       />
 
       {renderPage()}
-
-      {/* Footer – hidden on map page to maximise map height */}
-      {activePage !== 'map' && (
-        <footer className="bg-white border-t-2 border-gray-200 mt-12">
-          <div className="max-w-[1600px] mx-auto px-6 py-5">
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-gray-600">
-                AI-Based Smart Traffic Management System — Hackathon 2024
-              </p>
-              <div className="flex items-center gap-6 text-sm text-gray-500">
-                <span>{trafficData.cameras.length} Active Cameras</span>
-                <span>{trafficData.signals.length} Controlled Signals</span>
-                <span>Real-time AI Processing</span>
-              </div>
-            </div>
-          </div>
-        </footer>
-      )}
     </div>
   );
 }

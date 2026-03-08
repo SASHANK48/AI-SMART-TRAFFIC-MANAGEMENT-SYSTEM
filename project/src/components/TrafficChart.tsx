@@ -9,9 +9,10 @@ interface TrafficChartProps {
   data: DataPoint[];
   color: string;
   label: string;
+  isDarkMode: boolean;
 }
 
-export function TrafficChart({ data, color, label }: TrafficChartProps) {
+export function TrafficChart({ data, color, label, isDarkMode }: TrafficChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -60,7 +61,7 @@ export function TrafficChart({ data, color, label }: TrafficChartProps) {
     ctx.fillStyle = gradient;
     ctx.fill();
 
-    ctx.fillStyle = '#6B7280';
+    ctx.fillStyle = isDarkMode ? '#9CA3AF' : '#6B7280'; // text-gray-400 : text-gray-500
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'center';
     data.forEach((point, i) => {
@@ -74,11 +75,13 @@ export function TrafficChart({ data, color, label }: TrafficChartProps) {
     ctx.fillText('0', padding - 5, height - padding + 5);
     ctx.fillText(maxValue.toString(), padding - 5, padding + 5);
 
-  }, [data, color]);
+  }, [data, color, isDarkMode]);
 
   return (
-    <div className="bg-white rounded-xl border-2 border-gray-200 p-6 shadow-lg">
-      <h3 className="font-bold text-gray-900 mb-4">{label}</h3>
+    <div className={`rounded-xl border p-6 shadow-lg ${
+        isDarkMode ? 'bg-gray-800/50 border-gray-700/50 backdrop-blur-md' : 'bg-white border-gray-200'
+    }`}>
+      <h3 className={`font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{label}</h3>
       <canvas
         ref={canvasRef}
         width={600}

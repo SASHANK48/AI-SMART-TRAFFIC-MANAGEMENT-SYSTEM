@@ -1,4 +1,4 @@
-/*
+
   # Smart Traffic Management System Database Schema
 
   1. New Tables
@@ -41,7 +41,7 @@
   2. Security
     - Enable RLS on all tables
     - Add policies for public read access (demo purposes)
-*/
+
 
 CREATE TABLE IF NOT EXISTS traffic_cameras (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

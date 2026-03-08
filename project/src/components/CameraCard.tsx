@@ -4,9 +4,10 @@ import type { TrafficCamera, TrafficData } from '../types/traffic';
 interface CameraCardProps {
   camera: TrafficCamera;
   trafficData?: TrafficData;
+  isDarkMode: boolean;
 }
 
-export function CameraCard({ camera, trafficData }: CameraCardProps) {
+export function CameraCard({ camera, trafficData, isDarkMode }: CameraCardProps) {
   const getDensityColor = (level?: string) => {
     switch (level) {
       case 'low': return 'bg-green-500';
@@ -18,17 +19,27 @@ export function CameraCard({ camera, trafficData }: CameraCardProps) {
   };
 
   const getDensityBg = (level?: string) => {
-    switch (level) {
-      case 'low': return 'bg-green-50 border-green-200';
-      case 'medium': return 'bg-yellow-50 border-yellow-200';
-      case 'high': return 'bg-orange-50 border-orange-200';
-      case 'critical': return 'bg-red-50 border-red-200';
-      default: return 'bg-gray-50 border-gray-200';
+    if (isDarkMode) {
+        switch (level) {
+          case 'low': return 'bg-gray-800/80 border-green-500/30';
+          case 'medium': return 'bg-gray-800/80 border-yellow-500/30';
+          case 'high': return 'bg-gray-800/80 border-orange-500/30';
+          case 'critical': return 'bg-gray-800/80 border-red-500/30';
+          default: return 'bg-gray-800/80 border-gray-700/50';
+        }
+    } else {
+        switch (level) {
+          case 'low': return 'bg-green-50 border-green-200';
+          case 'medium': return 'bg-yellow-50 border-yellow-200';
+          case 'high': return 'bg-orange-50 border-orange-200';
+          case 'critical': return 'bg-red-50 border-red-200';
+          default: return 'bg-gray-50 border-gray-200';
+        }
     }
   };
 
   return (
-    <div className={`rounded-xl border-2 overflow-hidden shadow-lg transition-all hover:shadow-xl ${getDensityBg(trafficData?.density_level)}`}>
+    <div className={`rounded-xl border overflow-hidden shadow-lg transition-all hover:shadow-xl backdrop-blur-md ${getDensityBg(trafficData?.density_level)}`}>
       <div className="relative bg-gray-900 aspect-video flex items-center justify-center">
         <div className="absolute top-3 right-3 flex items-center gap-2">
           <span className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${camera.status === 'online' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}>
@@ -41,35 +52,35 @@ export function CameraCard({ camera, trafficData }: CameraCardProps) {
       </div>
 
       <div className="p-4">
-        <h3 className="font-bold text-lg text-gray-900 mb-1">{camera.name}</h3>
-        <p className="text-sm text-gray-600 mb-3">{camera.location}</p>
+        <h3 className={`font-bold text-lg mb-1 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{camera.name}</h3>
+        <p className={`text-sm mb-3 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>{camera.location}</p>
 
         {trafficData && (
           <div className="grid grid-cols-2 gap-3">
-            <div className="bg-white rounded-lg p-3 border border-gray-200">
-              <p className="text-xs text-gray-500 mb-1">Vehicles</p>
-              <p className="text-2xl font-bold text-gray-900">{trafficData.vehicle_count}</p>
+            <div className={`rounded-lg p-3 border ${isDarkMode ? 'bg-black/40 border-gray-700/50' : 'bg-white border-gray-200'}`}>
+              <p className={`text-xs mb-1 ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>Vehicles</p>
+              <p className={`text-2xl font-bold ${isDarkMode ? 'text-gray-100' : 'text-gray-900'}`}>{trafficData.vehicle_count}</p>
             </div>
-            <div className="bg-white rounded-lg p-3 border border-gray-200">
-              <p className="text-xs text-gray-500 mb-1">Avg Speed</p>
-              <p className="text-2xl font-bold text-gray-900">{trafficData.average_speed}<span className="text-sm ml-1">km/h</span></p>
+            <div className={`rounded-lg p-3 border ${isDarkMode ? 'bg-black/40 border-gray-700/50' : 'bg-white border-gray-200'}`}>
+              <p className={`text-xs mb-1 ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>Avg Speed</p>
+              <p className={`text-2xl font-bold ${isDarkMode ? 'text-gray-100' : 'text-gray-900'}`}>{trafficData.average_speed}<span className="text-sm ml-1 font-normal opacity-70">km/h</span></p>
             </div>
-            <div className="col-span-2 bg-white rounded-lg p-3 border border-gray-200">
-              <p className="text-xs text-gray-500 mb-2">Congestion Level</p>
+            <div className={`col-span-2 rounded-lg p-3 border ${isDarkMode ? 'bg-black/40 border-gray-700/50' : 'bg-white border-gray-200'}`}>
+              <p className={`text-xs mb-2 ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`}>Congestion Level</p>
               <div className="flex items-center gap-2">
-                <div className="flex-1 bg-gray-200 rounded-full h-2">
+                <div className={`flex-1 rounded-full h-2 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'}`}>
                   <div
                     className={`h-2 rounded-full ${getDensityColor(trafficData.density_level)}`}
                     style={{ width: `${trafficData.congestion_score}%` }}
                   ></div>
                 </div>
-                <span className="text-sm font-bold text-gray-900">{trafficData.congestion_score}%</span>
+                <span className={`text-sm font-bold ${isDarkMode ? 'text-gray-100' : 'text-gray-900'}`}>{trafficData.congestion_score}%</span>
               </div>
-              <p className={`text-xs font-medium mt-1 capitalize ${
-                trafficData.density_level === 'critical' ? 'text-red-600' :
-                trafficData.density_level === 'high' ? 'text-orange-600' :
-                trafficData.density_level === 'medium' ? 'text-yellow-600' :
-                'text-green-600'
+              <p className={`text-xs font-semibold mt-1 capitalize shadow-sm ${
+                trafficData.density_level === 'critical' ? (isDarkMode ? 'text-red-400' : 'text-red-600') :
+                trafficData.density_level === 'high' ? (isDarkMode ? 'text-orange-400' : 'text-orange-600') :
+                trafficData.density_level === 'medium' ? (isDarkMode ? 'text-yellow-400' : 'text-yellow-600') :
+                (isDarkMode ? 'text-green-400' : 'text-green-600')
               }`}>
                 {trafficData.density_level} density
               </p>

@@ -5,6 +5,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const connectDB = require('./config/db');
 const trafficRoutes = require('./routes/trafficRoutes');
+const cameraRoutes = require('./routes/cameraRoutes');
 const { setupSocket } = require('./sockets/socketHandler');
 const { startSimulation } = require('./services/trafficSimulator');
 const { seedIfEmpty } = require('./scripts/seedData');
@@ -29,6 +30,7 @@ app.use(cors({ origin: CORS_ORIGIN.split(',').map((o) => o.trim()) }));
 app.use(express.json());
 
 app.use('/api/traffic', trafficRoutes);
+app.use('/api/cameras', cameraRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
