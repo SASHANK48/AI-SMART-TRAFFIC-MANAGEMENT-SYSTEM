@@ -6,6 +6,9 @@ const cors = require('cors');
 const connectDB = require('./config/db');
 const trafficRoutes = require('./routes/trafficRoutes');
 const cameraRoutes = require('./routes/cameraRoutes');
+const authRoutes = require('./routes/authRoutes');
+const cityRoutes = require('./routes/cityRoutes');
+const alertRoutes = require('./routes/alertRoutes');
 const { setupSocket } = require('./sockets/socketHandler');
 const { startSimulation } = require('./services/trafficSimulator');
 const { seedIfEmpty } = require('./scripts/seedData');
@@ -19,18 +22,19 @@ const TRAFFIC_UPDATE_INTERVAL = Number(process.env.TRAFFIC_UPDATE_INTERVAL) || 5
 
 const io = new Server(server, {
   cors: {
-    origin: CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean).length
-      ? CORS_ORIGIN.split(',').map((o) => o.trim())
-      : '*',
-    methods: ['GET', 'POST'],
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
   },
 });
 
-app.use(cors({ origin: CORS_ORIGIN.split(',').map((o) => o.trim()) }));
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 app.use('/api/traffic', trafficRoutes);
 app.use('/api/cameras', cameraRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/cities', cityRoutes);
+app.use('/api/alerts', alertRoutes);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

@@ -2,63 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Leaflet Google overrides for light mode */
-html:not(.dark) .google-popup-style .leaflet-popup-content-wrapper {
-  background: rgba(255, 255, 255, 0.95) !important;
-  color: #1f2937 !important;
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-}
-html:not(.dark) .google-popup-style .leaflet-popup-tip {
-  background: rgba(255, 255, 255, 0.95) !important;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-50 antialiased transition-colors duration-200;
+  }
 }
 
-/* Leaflet wrapper overrides for dark mode */
-html.dark .google-popup-style .leaflet-popup-content-wrapper {
-  background: rgba(17, 24, 39, 0.95) !important; /* bg-gray-900 */
-  color: #f3f4f6 !important; /* text-gray-100 */
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  border: 1px solid #374151; /* border-gray-700 */
-}
-html.dark .google-popup-style .leaflet-popup-tip {
-  background: rgba(17, 24, 39, 0.95) !important;
-}
-
-.google-popup-style .leaflet-popup-content-wrapper {
-  border-radius: 12px !important;
-  padding: 0 !important;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
-  overflow: hidden;
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
-}
-
-.google-popup-style .leaflet-popup-content {
-  margin: 0 !important;
-  line-height: inherit !important;
-}
-
-.critical-traffic-line {
-    stroke-dasharray: 10, 10;
-    animation: snake 1s linear infinite;
-}
-
-@keyframes snake {
-    from { stroke-dashoffset: 20; }
-    to { stroke-dashoffset: 0; }
-}
-
-/* Base custom pulsing incident marker */
-.custom-incident-marker {
-  animation: pulse-ring 2s infinite alternate;
-  filter: drop-shadow(0 2px 8px rgba(239, 68, 68, 0.6));
-}
-@keyframes pulse-ring {
-  0% { transform: scale(0.9); }
-  100% { transform: scale(1.1); }
-}
-
-/* Hide leaflet footer */
-.leaflet-control-attribution {
-  display: none !important;
-}

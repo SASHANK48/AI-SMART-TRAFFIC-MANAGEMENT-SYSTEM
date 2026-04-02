@@ -1,6 +1,31 @@
 import { useEffect, useState } from 'react';
-
+import { useSocket } from '../contexts/SocketContext';
 import type { TrafficCamera, TrafficData, TrafficSignal, TrafficAlert } from '../types/traffic';
+
+interface ApiCity {
+  _id: string;
+  city_name: string;
+  latitude: number;
+  longitude: number;
+}
+
+interface ApiAlert {
+  _id: string;
+  city_id: { _id?: string } | string;
+  severity: string;
+  message: string;
+  timestamp: string;
+}
+
+interface ApiTrafficUpdate {
+  _id: string;
+  city_id: string;
+  traffic_level: string;
+  vehicle_count?: number;
+  average_speed?: number;
+  congestion_score?: number;
+  timestamp: string;
+}
 
 export interface TrafficState {
   cameras: TrafficCamera[];
@@ -14,140 +39,118 @@ export interface TrafficState {
   criticalLocations: number;
 }
 
-function buildInitialData(camerasList: TrafficCamera[]) {
-  const newTrafficData = new Map<string, TrafficData>();
-  const newSignals: TrafficSignal[] = [];
-  const newAlerts: TrafficAlert[] = [];
-  const densityLevels: ('low' | 'medium' | 'high' | 'critical')[] = ['low', 'medium', 'high', 'critical'];
-
-  camerasList.forEach((camera, index) => {
-    const densityLevel: 'low' | 'medium' | 'high' | 'critical' =
-      densityLevels[Math.floor(Math.random() * densityLevels.length)] ?? 'low';
-    const congestionScore =
-      densityLevel === 'low' ? 20 + Math.random() * 20 :
-        densityLevel === 'medium' ? 40 + Math.random() * 20 :
-          densityLevel === 'high' ? 60 + Math.random() * 20 :
-            80 + Math.random() * 20;
-
-    newTrafficData.set(camera.id, {
-      id: `td-${index}`,
-      camera_id: camera.id,
-      vehicle_count: Math.floor(Math.random() * 150) + 10,
-      density_level: densityLevel,
-      average_speed: Math.floor(Math.random() * 60) + 10,
-      congestion_score: Math.floor(congestionScore),
-      timestamp: new Date().toISOString(),
-    });
-
-    const signalStates: ('red' | 'green')[] = ['red', 'green'];
-    newSignals.push({
-      id: `sig-${index}`,
-      camera_id: camera.id,
-      signal_name: camera.name,
-      current_state: signalStates[Math.floor(Math.random() * signalStates.length)] ?? 'red',
-      green_duration: 45 + Math.floor(Math.random() * 60),
-      red_duration: 45 + Math.floor(Math.random() * 60),
-      last_optimized: new Date(Date.now() - Math.random() * 300000).toISOString(),
-    });
-
-    if (densityLevel === 'critical' || densityLevel === 'high') {
-      newAlerts.push({
-        id: `alert-${index}`,
-        camera_id: camera.id,
-        alert_type: 'congestion',
-        severity: densityLevel === 'critical' ? 'critical' : 'high',
-        message: `Heavy traffic detected at ${camera.name}. Consider alternate routes.`,
-        resolved: Math.random() > 0.7,
-        created_at: new Date(Date.now() - Math.random() * 1800000).toISOString(),
-      });
-    }
-  });
-
-  const chartData = Array.from({ length: 12 }, (_, i) => ({
-    time: `${String(Math.max(1, 12 - i)).padStart(2, '0')}:00`,
-    value: Math.floor(Math.random() * 100) + 20,
-  }));
-
-  return { newTrafficData, newSignals, newAlerts, chartData };
-}
-
 export function useTrafficData(): TrafficState {
+  const { socket, isConnected } = useSocket();
   const [cameras, setCameras] = useState<TrafficCamera[]>([]);
   const [trafficData, setTrafficData] = useState<Map<string, TrafficData>>(new Map());
-  const [signals, setSignals] = useState<TrafficSignal[]>([]);
+  const [signals] = useState<TrafficSignal[]>([]);
   const [alerts, setAlerts] = useState<TrafficAlert[]>([]);
   const [chartData, setChartData] = useState<{ time: string; value: number }[]>([]);
 
-  // Load initial data once on mount, then start 3-second simulation interval
   useEffect(() => {
     let mounted = true;
 
-    // Load cameras from backend API, then seed simulated data
-    fetch('http://localhost:5000/api/cameras')
+    // Fetch initial cameras/cities
+    fetch('http://localhost:5000/api/cities')
       .then(res => res.json())
-      .then((data: { success: boolean; data: TrafficCamera[] }) => {
-        if (!mounted || !data.success || !data.data) return;
-        const camerasData = data.data;
-        const { newTrafficData, newSignals, newAlerts, chartData: newChartData } = buildInitialData(camerasData);
-        setCameras(camerasData);
-        setTrafficData(newTrafficData);
-        setSignals(newSignals);
-        setAlerts(newAlerts);
-        setChartData(newChartData);
+      .then(data => {
+        if (!mounted) return;
+        const mappedCameras = data.map((c: ApiCity) => ({
+          id: c._id,
+          name: c.city_name,
+          location: c.city_name,
+          latitude: c.latitude,
+          longitude: c.longitude,
+          status: 'active'
+        }));
+        setCameras(mappedCameras);
       })
-      .catch(err => console.error("Error fetching cameras:", err));
+      .catch(console.error);
 
-    // Simulation tick
-    const interval = setInterval(() => {
-      setTrafficData(prev => {
-        const updated = new Map(prev);
-        updated.forEach((data, cameraId) => {
-          const variation = (Math.random() - 0.5) * 20;
-          const newCount = Math.max(10, Math.min(200, data.vehicle_count + variation));
-          const newSpeed = Math.max(5, Math.min(80, data.average_speed + (Math.random() - 0.5) * 10));
-          const newScore = Math.max(0, Math.min(100, data.congestion_score + (Math.random() - 0.5) * 15));
-
-          let newLevel: 'low' | 'medium' | 'high' | 'critical' = 'low';
-          if (newScore < 30) newLevel = 'low';
-          else if (newScore < 50) newLevel = 'medium';
-          else if (newScore < 75) newLevel = 'high';
-          else newLevel = 'critical';
-
-          updated.set(cameraId, {
-            ...data,
-            vehicle_count: Math.floor(newCount),
-            average_speed: Math.floor(newSpeed),
-            congestion_score: Math.floor(newScore),
-            density_level: newLevel,
-            timestamp: new Date().toISOString(),
-          });
+    // Fetch initial alerts
+    fetch('http://localhost:5000/api/alerts')
+      .then(res => res.json())
+      .then(data => {
+        if (!mounted) return;
+        const mappedAlerts = data.map((a: ApiAlert) => {
+          const cid = typeof a.city_id === 'object' && a.city_id !== null ? a.city_id._id : a.city_id;
+          return {
+            id: a._id,
+            camera_id: cid as string,
+            alert_type: 'congestion',
+            severity: a.severity.toLowerCase() as 'low' | 'medium' | 'high' | 'critical',
+            message: a.message,
+            resolved: false,
+            created_at: a.timestamp
+          };
         });
-        return updated;
-      });
-
-      setSignals(prev =>
-        prev.map(signal => ({
-          ...signal,
-          current_state: Math.random() > 0.7
-            ? (signal.current_state === 'red' ? 'green' : 'red')
-            : signal.current_state,
-        }))
-      );
-
-      setChartData(prev => [
-        ...prev.slice(1),
-        {
-          time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-          value: Math.floor(Math.random() * 100) + 20,
-        },
-      ]);
-    }, 3000);
+        setAlerts(mappedAlerts);
+      })
+      .catch(console.error);
 
     return () => {
       mounted = false;
-      clearInterval(interval);
     };
-  }, []); // stable: no external deps, all setters are stable references
+  }, []);
+
+  useEffect(() => {
+    if (!socket || !isConnected) return;
+
+    const handleTrafficUpdate = (updates: ApiTrafficUpdate[]) => {
+      setTrafficData(prev => {
+        const next = new Map(prev);
+        updates.forEach(u => {
+          let density = 'low';
+          if (u.traffic_level === 'Moderate') density = 'medium';
+          if (u.traffic_level === 'Heavy') density = 'high';
+          if (u.traffic_level === 'Severe') density = 'critical';
+
+          next.set(u.city_id, {
+            id: u._id,
+            camera_id: u.city_id,
+            vehicle_count: u.vehicle_count || Math.floor(Math.random() * 100) + 20,
+            density_level: density as 'low' | 'medium' | 'high' | 'critical',
+            average_speed: u.average_speed || Math.floor(Math.random() * 40) + 20,
+            congestion_score: u.congestion_score || (density === 'critical' ? 90 : density === 'high' ? 70 : 40),
+            timestamp: u.timestamp
+          });
+        });
+        return next;
+      });
+
+      setChartData(prev => {
+        const avgScore = updates.reduce((acc, u) => acc + (u.congestion_score || 50), 0) / (updates.length || 1);
+        const newPoint = {
+          time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+          value: avgScore
+        };
+        const next = [...prev, newPoint];
+        if (next.length > 12) return next.slice(1);
+        return next;
+      });
+    };
+
+    const handleAlertsUpdate = (newAlert: ApiAlert) => {
+       const cid = typeof newAlert.city_id === 'object' && newAlert.city_id !== null ? newAlert.city_id._id : newAlert.city_id;
+       setAlerts(prev => [{
+          id: newAlert._id,
+          camera_id: cid as string,
+          alert_type: 'congestion',
+          severity: newAlert.severity.toLowerCase() as 'low' | 'medium' | 'high' | 'critical',
+          message: newAlert.message,
+          resolved: false,
+          created_at: newAlert.timestamp
+       }, ...prev]);
+    };
+
+    socket.on('trafficUpdate', handleTrafficUpdate);
+    socket.on('newAlert', handleAlertsUpdate);
+
+    return () => {
+      socket.off('trafficUpdate', handleTrafficUpdate);
+      socket.off('newAlert', handleAlertsUpdate);
+    };
+  }, [socket, isConnected]);
 
   const totalVehicles = Array.from(trafficData.values()).reduce((sum, d) => sum + d.vehicle_count, 0);
   const averageSpeed = Array.from(trafficData.values()).reduce((sum, d) => sum + d.average_speed, 0) / Math.max(trafficData.size, 1);

@@ -1,100 +1,90 @@
-const Traffic = require('../models/Traffic');
+const City = require('../models/City');
+const TrafficRecord = require('../models/TrafficRecord');
+const Alert = require('../models/Alert');
 
-/**
- * Get status string from congestion level (0-100)
- * 0–40 → Smooth, 41–70 → Moderate, 71–100 → Heavy
- */
-function getStatusFromLevel(level) {
-  const clamped = Math.max(0, Math.min(100, Math.round(level)));
-  if (clamped <= 40) return 'Smooth';
-  if (clamped <= 70) return 'Moderate';
-  return 'Heavy';
+function getLevelAndScore(score) {
+  const clamped = Math.max(0, Math.min(100, Math.round(score)));
+  if (clamped <= 30) return 'Free';
+  if (clamped <= 60) return 'Moderate';
+  if (clamped <= 85) return 'Heavy';
+  return 'Severe';
 }
 
-/**
- * Haversine distance in km (approximate) - for "repulsion" weight
- */
-function haversineKm(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
+async function runSimulationTick(io) {
+  // Rather than simulate all 40,000+ cities at once, sample a small batch to keep the server alive
+  // and prevent flooding the websocket clients.
+  const sampleSize = 100;
+  // Use aggregation to get random sample
+  const cities = await City.aggregate([{ $sample: { size: sampleSize } }]);
+  if (cities.length === 0) return [];
 
-/**
- * Anti-gravity inspired congestion dispersion:
- * - High density at node A "repels" traffic → reduces effective density at A, increases at others
- * - Nearby high-congestion nodes push flow away (dispersion)
- * Returns new congestion level for one node given all nodes' current levels and positions.
- */
-function computeDispersion(cityIndex, nodes, congestionLevels) {
-  const node = nodes[cityIndex];
-  let repulsion = 0;
-  let attraction = 0;
-  const kRepel = 0.15;   // how much neighboring congestion "pushes" traffic away
-  const kAttract = 0.08; // baseline drift toward mean
-  const meanLevel = congestionLevels.reduce((a, b) => a + b, 0) / congestionLevels.length;
+  const updates = [];
+  const newRecordsData = [];
+  const newAlertsData = [];
 
-  for (let i = 0; i < nodes.length; i++) {
-    if (i === cityIndex) continue;
-    const other = nodes[i];
-    const distKm = haversineKm(node.latitude, node.longitude, other.latitude, other.longitude);
-    if (distKm < 1) continue; // avoid div by zero
-    // Repulsion: high congestion elsewhere pushes flow away from that area (so this node gets some "pushed" flow)
-    const weight = 1 / (distKm * distKm);
-    repulsion += congestionLevels[i] * weight * kRepel;
-    attraction += meanLevel * (1 / nodes.length) * kAttract;
+  for (let city of cities) {
+    // get previous record
+    const lastRecord = await TrafficRecord.findOne({ city_id: city._id }).sort({ timestamp: -1 }).lean();
+    let currentScore = lastRecord ? (lastRecord.congestion_score || 50) : 50;
+
+    // Simulate traffic fluctuation
+    let variation = (Math.random() - 0.5) * 15;
+    let nextScore = Math.max(0, Math.min(100, currentScore + variation));
+    let level = getLevelAndScore(nextScore);
+
+    const vehicleCount = Math.floor(nextScore * 2 + Math.random() * 20);
+    const averageSpeed = Math.floor(100 - nextScore * 0.8);
+    const timestamp = new Date();
+    
+    // Instead of creating one-by-one, store in array for bulk insert
+    const recordId = new mongoose.Types.ObjectId();
+    newRecordsData.push({
+      _id: recordId,
+      city_id: city._id,
+      road_name: 'Main Highway',
+      traffic_level: level,
+      source: 'Internal Simulation',
+      congestion_score: nextScore,
+      vehicle_count: vehicleCount,
+      average_speed: averageSpeed,
+      timestamp: timestamp
+    });
+
+    updates.push({
+      _id: recordId,
+      city_id: city._id,
+      traffic_level: level,
+      congestion_score: nextScore,
+      vehicle_count: vehicleCount,
+      average_speed: averageSpeed,
+      timestamp: timestamp
+    });
+
+    // Auto-generate alerts for Severe traffic
+    if (level === 'Severe') {
+      const recentAlert = await Alert.findOne({ city_id: city._id, severity: 'Critical' }).sort({ timestamp: -1 });
+      const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000);
+      
+      // Prevent alert spam
+      if (!recentAlert || recentAlert.timestamp < fiveMinsAgo) {
+        newAlertsData.push({
+          city_id: city._id,
+          severity: 'Critical',
+          message: `Severe traffic congestion detected in ${city.city_name}.`
+        });
+      }
+    }
   }
 
-  const current = congestionLevels[cityIndex];
-  // Dispersion: current level decreases when repulsion is high (traffic leaves), increases when others repel toward us
-  const dispersion = repulsion * 2.5 - current * 0.02;
-  const drift = (meanLevel - current) * kAttract;
-  let next = current + dispersion + drift;
-  // Add small randomness (traffic fluctuation)
-  next += (Math.random() - 0.5) * 8;
-  return Math.max(0, Math.min(100, next));
-}
-
-/**
- * Run one simulation tick: load all traffic nodes, apply anti-gravity dispersion, save and return updates.
- */
-async function runSimulationTick(io) {
-  const nodes = await Traffic.find().lean();
-  if (nodes.length === 0) return [];
-
-  const congestionLevels = nodes.map((n) => n.congestionLevel);
-  const updates = [];
-
-  for (let i = 0; i < nodes.length; i++) {
-    const newLevel = computeDispersion(i, nodes, congestionLevels);
-    const status = getStatusFromLevel(newLevel);
-
-    const updated = await Traffic.findOneAndUpdate(
-      { city: nodes[i].city },
-      {
-        congestionLevel: Math.round(newLevel * 10) / 10,
-        status,
-        updatedAt: new Date(),
-      },
-      { new: true }
-    ).lean();
-
-    if (updated) {
-      updates.push({
-        city: updated.city,
-        location: updated.location,
-        latitude: updated.latitude,
-        longitude: updated.longitude,
-        congestionLevel: updated.congestionLevel,
-        status: updated.status,
-        updatedAt: updated.updatedAt,
-      });
-      congestionLevels[i] = updated.congestionLevel;
+  // Bulk operations
+  if (newRecordsData.length > 0) {
+    await TrafficRecord.insertMany(newRecordsData);
+  }
+  
+  if (newAlertsData.length > 0) {
+    const insertedAlerts = await Alert.insertMany(newAlertsData);
+    if (io) {
+      insertedAlerts.forEach(alert => io.emit('newAlert', alert));
     }
   }
 
@@ -105,9 +95,6 @@ async function runSimulationTick(io) {
   return updates;
 }
 
-/**
- * Start periodic traffic simulation (every 5 seconds by default).
- */
 function startSimulation(io, intervalMs = 5000) {
   const interval = setInterval(async () => {
     try {
@@ -119,8 +106,4 @@ function startSimulation(io, intervalMs = 5000) {
   return () => clearInterval(interval);
 }
 
-module.exports = {
-  getStatusFromLevel,
-  runSimulationTick,
-  startSimulation,
-};
+module.exports = { runSimulationTick, startSimulation };
