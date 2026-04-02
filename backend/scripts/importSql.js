@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 require('dotenv').config();
 const City = require('../models/City');
 
-async function importSqlData(filePath) {
+async function getSqlData(filePath, seenNames) {
   try {
     const fileStream = fs.createReadStream(filePath);
     const rl = readline.createInterface({
@@ -14,7 +14,6 @@ async function importSqlData(filePath) {
     });
 
     let currentCities = [];
-    const seenNames = new Set();
     console.log(`Reading SQL file: ${filePath}`);
 
     for await (const line of rl) {
@@ -32,19 +31,10 @@ async function importSqlData(filePath) {
         }
       }
     }
-
-    if (currentCities.length > 0) {
-      console.log(`Found ${currentCities.length} unique locations. Inserting into MongoDB...`);
-      // We'll clear existing cities first to prevent massive duplicates if they ran this multiple times
-      await City.deleteMany({});
-      await City.insertMany(currentCities);
-      console.log('Successfully imported data to MongoDB.');
-    } else {
-      console.log('No valid data rows found in SQL.');
-    }
-
+    return currentCities;
   } catch (error) {
-    console.error('Error parsing SQL to MongoDB:', error);
+    console.error(`Error parsing SQL from ${filePath}:`, error);
+    return [];
   }
 }
 
@@ -52,10 +42,23 @@ async function run() {
   try {
     await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/traffic_management_system');
     
-    // The user provided two files that appear to have identical schemas. 
-    // We will load the supabase-insert.sql file as requested.
-    const file = path.join(__dirname, '../../project/supabase-insert.sql');
-    await importSqlData(file);
+    const file1 = path.join(__dirname, '../../project/supabase-insert.sql');
+    const file2 = path.join(__dirname, '../../project/south_india_insert.sql');
+    
+    const seenNames = new Set();
+    const cities1 = await getSqlData(file1, seenNames);
+    const cities2 = await getSqlData(file2, seenNames);
+    
+    const allCities = [...cities1, ...cities2];
+    
+    if (allCities.length > 0) {
+      console.log(`Found ${allCities.length} unique locations in total. Inserting into MongoDB...`);
+      await City.deleteMany({});
+      await City.insertMany(allCities);
+      console.log('Successfully imported combined data to MongoDB.');
+    } else {
+      console.log('No valid data rows found in SQL.');
+    }
 
     process.exit(0);
   } catch (err) {

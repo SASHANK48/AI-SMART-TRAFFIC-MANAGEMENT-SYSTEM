@@ -1,6 +1,7 @@
 const City = require('../models/City');
 const TrafficRecord = require('../models/TrafficRecord');
 const Alert = require('../models/Alert');
+const mongoose = require('mongoose');
 
 function getLevelAndScore(score) {
   const clamped = Math.max(0, Math.min(100, Math.round(score)));
